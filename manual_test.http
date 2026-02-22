@@ -1,0 +1,59 @@
+### client-1 +150
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "client-1",
+    "amount": 150.00
+}
+
+### client-1 -50
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "client-1",
+    "amount": -50.00
+}
+
+### client-2 +300.5
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "client-2",
+    "amount": 300.50
+}
+
+### client-2 -10.5
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "client-2",
+    "amount": -10.50
+}
+
+### client-3 -25
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "client-3",
+    "amount": -25.00
+}
+
+### Check balance and transactions of Client 1
+GET http://localhost:8080/user/client-1
+
+### Check balance and transactions of Client 2
+GET http://localhost:8080/user/client-2
+
+### Check balance and transactions of Client 3
+GET http://localhost:8080/user/client-3
+
+### Check balances of all clients
+GET http://localhost:8080/accounts
+
+### Check execution time (metrics)
+GET http://localhost:8080/metrics
