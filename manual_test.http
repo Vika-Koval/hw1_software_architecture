@@ -1,59 +1,101 @@
-### client-1 +150
+### msg1
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
 {
-    "user_Id": "client-1",
-    "amount": 150.00
+    "user_Id": "msg1",
+    "amount": 1.00
 }
 
-### client-1 -50
+### msg2
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
 {
-    "user_Id": "client-1",
-    "amount": -50.00
+    "user_Id": "msg2",
+    "amount": 2.00
 }
 
-### client-2 +300.5
+### msg3
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
 {
-    "user_Id": "client-2",
-    "amount": 300.50
+    "user_Id": "msg3",
+    "amount": 3.00
 }
 
-### client-2 -10.5
+### msg4
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
 {
-    "user_Id": "client-2",
-    "amount": -10.50
+    "user_Id": "msg4",
+    "amount": 4.00
 }
 
-### client-3 -25
+### msg5
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
 {
-    "user_Id": "client-3",
-    "amount": -25.00
+    "user_Id": "msg5",
+    "amount": 5.00
 }
 
-### Check balance and transactions of Client 1
-GET http://localhost:8080/user/client-1
+### msg6
+POST http://localhost:8080/transaction
+Content-Type: application/json
 
-### Check balance and transactions of Client 2
-GET http://localhost:8080/user/client-2
+{
+    "user_Id": "msg6",
+    "amount": 6.00
+}
 
-### Check balance and transactions of Client 3
-GET http://localhost:8080/user/client-3
+### msg7
+POST http://localhost:8080/transaction
+Content-Type: application/json
 
-### Check balances of all clients
+{
+    "user_Id": "msg7",
+    "amount": 7.00
+}
+
+### msg8
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "msg8",
+    "amount": 8.00
+}
+
+### msg9
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "msg9",
+    "amount": 9.00
+}
+
+### msg10
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "msg10",
+    "amount": 10.00
+}
+
+### 
+GET http://localhost:8080/user/msg1
+
+### 
+GET http://localhost:8080/user/msg10
+
+### 
 GET http://localhost:8080/accounts
 
-### Check execution time (metrics)
+### 
 GET http://localhost:8080/metrics

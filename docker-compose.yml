@@ -40,8 +40,12 @@ services:
       - lab-network
 
   logging1:
-    build: ./logging-service
+    build: 
+      context: .
+      dockerfile: logging_service/Dockerfile
+    stop_signal: SIGINT
     environment:
+      - LOGGING_INSTANCE_ID=[logging-service-1]
       - HTTP_PORT=8081
       - GRPC_PORT=50051
       - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
@@ -55,8 +59,12 @@ services:
       - hazelcast1
 
   logging2:
-    build: ./logging-service
+    build: 
+      context: .
+      dockerfile: logging_service/Dockerfile
+    stop_signal: SIGINT
     environment:
+      - LOGGING_INSTANCE_ID=[logging-service-2]
       - HTTP_PORT=8082
       - GRPC_PORT=50051
       - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
@@ -70,8 +78,12 @@ services:
       - hazelcast2
 
   logging3:
-    build: ./logging-service
+    build: 
+      context: .
+      dockerfile: logging_service/Dockerfile
+    stop_signal: SIGINT
     environment:
+      - LOGGING_INSTANCE_ID=[logging-service-3]
       - HTTP_PORT=8083
       - GRPC_PORT=50051
       - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
@@ -85,7 +97,9 @@ services:
       - hazelcast3
 
   counter-service:
-    build: ./counter-service
+    build: 
+      context: .
+      dockerfile: counter_service/Dockerfile
     environment:
       - PORT=8084
       - DB_URL=postgresql://lab_user:lab_password@postgres-db:5432/counter_db
@@ -97,7 +111,9 @@ services:
       - postgres-db
 
   facade-service:
-    build: ./facade-service
+    build: 
+      context: .
+      dockerfile: facade_service/Dockerfile
     environment:
       - PORT=8080
       - LOGGING_GRPC_TARGETS=logging1:50051,logging2:50051,logging3:50051
@@ -117,4 +133,4 @@ networks:
     driver: bridge
 
 volumes:
-  pg_data: 
+  pg_data:
