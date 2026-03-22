@@ -1,4 +1,8 @@
 fastapi
 uvicorn
 httpx
+hazelcast-python-client
+asyncpg
+grpcio
+protobuf
 tqdm
