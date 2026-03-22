@@ -1,0 +1,120 @@
+services:
+  hazelcast1:
+    image: hazelcast/hazelcast:5.6.0
+    environment:
+      - HZ_CLUSTERNAME=lab3-cluster
+    ports:
+      - "5701:5701"
+    networks:
+      - lab-network
+
+  hazelcast2:
+    image: hazelcast/hazelcast:5.6.0
+    environment:
+      - HZ_CLUSTERNAME=lab3-cluster
+    ports:
+      - "5702:5701"
+    networks:
+      - lab-network
+
+  hazelcast3:
+    image: hazelcast/hazelcast:5.6.0
+    environment:
+      - HZ_CLUSTERNAME=lab3-cluster
+    ports:
+      - "5703:5701"
+    networks:
+      - lab-network
+
+  postgres-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: lab_user
+      POSTGRES_PASSWORD: lab_password
+      POSTGRES_DB: counter_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data 
+    networks:
+      - lab-network
+
+  logging1:
+    build: ./logging-service
+    environment:
+      - HTTP_PORT=8081
+      - GRPC_PORT=50051
+      - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - HZ_CLUSTER_NAME=lab3-cluster
+    ports:
+      - "8081:8081"   
+      - "50051:50051" 
+    networks:
+      - lab-network
+    depends_on:
+      - hazelcast1
+
+  logging2:
+    build: ./logging-service
+    environment:
+      - HTTP_PORT=8082
+      - GRPC_PORT=50051
+      - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - HZ_CLUSTER_NAME=lab3-cluster
+    ports:
+      - "8082:8082"
+      - "50052:50051"
+    networks:
+      - lab-network
+    depends_on:
+      - hazelcast2
+
+  logging3:
+    build: ./logging-service
+    environment:
+      - HTTP_PORT=8083
+      - GRPC_PORT=50051
+      - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - HZ_CLUSTER_NAME=lab3-cluster
+    ports:
+      - "8083:8083"
+      - "50053:50051"
+    networks:
+      - lab-network
+    depends_on:
+      - hazelcast3
+
+  counter-service:
+    build: ./counter-service
+    environment:
+      - PORT=8084
+      - DB_URL=postgresql://lab_user:lab_password@postgres-db:5432/counter_db
+    ports:
+      - "8084:8084"
+    networks:
+      - lab-network
+    depends_on:
+      - postgres-db
+
+  facade-service:
+    build: ./facade-service
+    environment:
+      - PORT=8080
+      - LOGGING_GRPC_TARGETS=logging1:50051,logging2:50051,logging3:50051
+      - COUNTER_SERVICE_URL=http://counter-service:8084
+    ports:
+      - "8080:8080"
+    networks:
+      - lab-network
+    depends_on:
+      - logging1
+      - logging2
+      - logging3
+      - counter-service
+
+networks:
+  lab-network:
+    driver: bridge
+
+volumes:
+  pg_data: 
