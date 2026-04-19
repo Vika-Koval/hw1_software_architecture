@@ -1,31 +1,4 @@
-# hw4_software_architecture
-
-Я обрала Kafka
-
-## Інсталяція
-
-Аби підняти сервіси, слід використати docker compose `docker compose up -d --build`
-
-## Демонстрація
-
-Завдання:
-- Запускається config-server,
-- Запустити facade-service, counter-service та три екземпляра
-logging-service (кожен з екземплярів запускається у власному
-Docker-контейнері), і далі реєструється в config-server,
-- Відповідно має запуститись також кластер Hazelcast з трьох
-серверів
-
-Я збілдила докер, і перевірив, що всі контейнери працюють через `docker ps`
-![alt text](img1.png)
-
-Базові ендпоінти:
-
-- Через HTTP POST записати 10 транзакцій msg1-msg10 через
-facade-service
-
-
-# hw4_software_architecture
+## hw4_software_architecture
 
 Я обрала Kafka як message queue.
 
