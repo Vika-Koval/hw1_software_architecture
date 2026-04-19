@@ -63,6 +63,7 @@ services:
     container_name: hw1-hazelcast1-1
     environment:
       - HZ_CLUSTERNAME=lab3-cluster
+      - HZ_NETWORK_PUBLICADDRESS=hazelcast1:5701
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast1,hazelcast2,hazelcast3
@@ -76,6 +77,7 @@ services:
     container_name: hw1-hazelcast2-1
     environment:
       - HZ_CLUSTERNAME=lab3-cluster
+      - HZ_NETWORK_PUBLICADDRESS=hazelcast2:5701
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast1,hazelcast2,hazelcast3
@@ -89,6 +91,7 @@ services:
     container_name: hw1-hazelcast3-1
     environment:
       - HZ_CLUSTERNAME=lab3-cluster
+      - HZ_NETWORK_PUBLICADDRESS=hazelcast3:5701
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast1,hazelcast2,hazelcast3
@@ -167,11 +170,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@postgres-db:5432/counterdb
       - HTTP_PORT=8001
-      - SELF_ADDRESS=http://counter-service:8001
+      - SELF_ADDRESS=http://counter-service:8000
       - CONFIG_SERVER_URL=http://config-server:8500
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     ports:
-      - "8001:8001"
+      - "8001:8000"
     depends_on:
       config-server:
         condition: service_started
@@ -193,7 +196,7 @@ services:
       - COUNTER_SERVICE_NAME=counter-service
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     ports:
-      - "8080:8080"
+      - "8080:8000"
     depends_on:
       config-server:
         condition: service_started

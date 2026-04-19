@@ -9,7 +9,7 @@ active_services: dict[str, dict[str, str]] = {}
 mutex = Lock()
 
 app_settings = {
-    "kafka.bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+    "kafka.bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"),
     "kafka.balance_updates.topic": os.getenv("KAFKA_BALANCE_UPDATES_TOPIC", "balance-updates"),
     "kafka.balance_updates.group_id": os.getenv("KAFKA_BALANCE_UPDATES_GROUP", "counter-service"),
     "hazelcast.cluster_name": os.getenv("HAZELCAST_CLUSTER_NAME", "lab3-cluster"),

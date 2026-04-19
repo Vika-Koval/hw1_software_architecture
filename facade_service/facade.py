@@ -58,6 +58,24 @@ async def lifespan(app: FastAPI):
     )
     await kafka_producer.start()
 
+    instance_id = os.getenv("INSTANCE_ID", "facade-service-1")
+    self_address = os.getenv("SELF_ADDRESS", "http://facade-service:8000")
+    for _ in range(10):
+        try:
+            await http_client.post(
+                f"{CONFIG_SERVER_URL}/register",
+                json={
+                    "service_name": "facade-service",
+                    "instance_id": instance_id,
+                    "address": self_address
+                }
+            )
+            print(f"Facade successfully registered in Config Server", flush=True)
+            break
+        except Exception as e:
+            print(f"Facade failed to register in Config Server: {e}", flush=True)
+            await asyncio.sleep(2)
+
     yield 
 
     print("Shutdown complete", flush=True)
@@ -148,15 +166,22 @@ async def process_transaction(req: TransactionRequest):
     log_data, log_time = await send_grpc_with_failover("SaveLog", payload)
     
     start_kafka = time.perf_counter()
-    await kafka_producer.send_and_wait(kafka_topic, value=payload)
+    kafka_offset, kafka_partition = 0, 0
+    if kafka_producer:
+        meta = await kafka_producer.send_and_wait(kafka_topic, value=payload)
+        kafka_offset, kafka_partition = meta.offset, meta.partition
     kafka_time = time.perf_counter() - start_kafka
 
     await update_metrics(log_time, kafka_time)
 
     return {
-        "transaction_Id": tx_id,
-        "status": "queued"
-    }
+        "transaction_id": tx_id,
+        "user_id": req.user_Id,
+        "amount": req.amount,
+        "queued": True,
+        "kafka_offset": kafka_offset,
+        "kafka_partition": kafka_partition
+        }
 
 @app.get("/user/{user_Id}")
 async def get_user_details(user_Id: str):
@@ -165,24 +190,33 @@ async def get_user_details(user_Id: str):
 
     results = await asyncio.gather(log_task, counter_task, return_exceptions=True)
 
-    if isinstance(results[0], Exception): raise results[0]
-    if isinstance(results[1], Exception): raise results[1]
+    if isinstance(results[0], Exception):
+        log_data, log_time = [], 0.0
+    else:
+        log_data, log_time = results[0]
 
-    (log_data, log_time), (counter_data, counter_time) = results
+    if isinstance(results[1], Exception):
+        counter_data, counter_time = {"balance": None}, 0.0
+    else:
+        counter_data, counter_time = results[1]
 
-    user_transactions = [log for log in log_data if log.get("user_Id") == user_Id]
+    user_transactions = [log for log in log_data if log.get("user_id") == user_Id or log.get("user_Id") == user_Id]
     await update_metrics(log_time, counter_time)
 
     return {
+        "user_id": user_Id, 
         "balance": counter_data.get("balance"),
         "transactions": user_transactions
     }
 
 @app.get("/accounts")
 async def get_all_accounts():
-    counter_data, counter_time = await call_counter_service("/accounts")
-    await update_metrics(count_time=counter_time)
-    return counter_data
+    try:
+        counter_data, counter_time = await call_counter_service("/accounts")
+        await update_metrics(count_time=counter_time)
+        return counter_data
+    except Exception:
+        return {"accounts": None}
 
 @app.get("/metrics")
 async def get_performance_metrics():
