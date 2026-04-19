@@ -6,3 +6,4 @@ asyncpg
 grpcio
 protobuf
 tqdm
+aiokafka

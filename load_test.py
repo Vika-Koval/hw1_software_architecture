@@ -1,21 +1,29 @@
 import asyncio
 import time
+import argparse
 import httpx
 from tqdm.asyncio import tqdm
 
 FACADE_URL = "http://localhost:8080"
 
-async def client_worker(client: httpx.AsyncClient, client_id: int, num_requests: int, shared_account: bool, progress_bar: tqdm):
-    user_id = "shared_user" if shared_account else f"user_{client_id}"
-    payload = {"user_Id": user_id, "amount": 1.0}
+async def client_worker(client: httpx.AsyncClient, user_id: str, num_requests: int, amount: float, progress_bar: tqdm):
+    payload = {"user_Id": user_id, "amount": amount}
     
     for _ in range(num_requests):
         response = await client.post(f"{FACADE_URL}/transaction", json=payload)
         response.raise_for_status()
         progress_bar.update(1)
 
-async def run_scenario(scenario_name: str, num_clients: int, requests_per_client: int, shared_account: bool):
-    total_requests = num_clients * requests_per_client
+async def main():
+    parser = argparse.ArgumentParser(description="Load Test for Microservices")
+    parser.add_argument("--clients", type=int, default=10, help="Number of concurrent clients")
+    parser.add_argument("--requests-per-client", type=int, default=10000, help="Requests per client")
+    parser.add_argument("--amount", type=float, default=1.0, help="Amount to add")
+    parser.add_argument("--same-user", action="store_true", help="Send all requests to one shared account")
+    parser.add_argument("--verify", action="store_true", help="Check balances after test")
+    
+    args = parser.parse_args()
+    total_requests = args.clients * args.requests_per_client
     
     limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
     
@@ -23,13 +31,12 @@ async def run_scenario(scenario_name: str, num_clients: int, requests_per_client
         await client.post(f"{FACADE_URL}/metrics/reset")
         
         progress_bar = tqdm(total=total_requests, desc="Request progress", unit="req")
-        
         start_time = time.perf_counter()
         
-        tasks = [
-            client_worker(client, i, requests_per_client, shared_account, progress_bar)
-            for i in range(num_clients)
-        ]
+        tasks = []
+        for i in range(args.clients):
+            user_id = "shared_user" if args.same_user else f"user_{i}"
+            tasks.append(client_worker(client, user_id, args.requests_per_client, args.amount, progress_bar))
         
         await asyncio.gather(*tasks)
         
@@ -38,29 +45,33 @@ async def run_scenario(scenario_name: str, num_clients: int, requests_per_client
         
         rps = total_requests / total_time
         
+        print("Test Results")
+        print(f"Total requests: {total_requests}")
+        print(f"Elapsed seconds: {total_time:.4f} sec")
+        print(f"Requests per second: {rps:.2f}")
+        
         metrics_resp = await client.get(f"{FACADE_URL}/metrics")
         metrics = metrics_resp.json()
         
-        if shared_account:
-            bal_resp = await client.get(f"{FACADE_URL}/user/shared_user")
-            print(f"Shared account balance: {bal_resp.json().get('balance')} (Expected: {total_requests})")
-        else:
-            accounts_resp = await client.get(f"{FACADE_URL}/accounts")
-            accounts_data = accounts_resp.json()
-            print(f"Number of created accounts: {len(accounts_data)} (Expected: {num_clients})")
-            print(f"Balance of user_0: {accounts_data.get('user_0')} (Expected: {requests_per_client})")
+        print(f"Logging total seconds: {metrics.get('logging_time_sec', 0):.4f} sec")
+        print(f"Counter total seconds: {metrics.get('counter_time_sec', 0):.4f} sec")
         
-        print(f"\nTotal execution time: {total_time:.4f} sec")
-        print(f"Throughput (RPS): {rps:.2f} requests/sec")
-        print(f"Logging Service time: {metrics.get('logging_time_sec', 0):.4f} sec")
-        print(f"Counter Service time: {metrics.get('counter_time_sec', 0):.4f} sec")
-
-async def main():
-    num_clients = 10
-    requests_per_client = 10000 
-    await run_scenario("Scenario 1: Different accounts", num_clients, requests_per_client, shared_account=False)
-    await asyncio.sleep(1)
-    await run_scenario("Scenario 2: Single shared account", num_clients, requests_per_client, shared_account=True)
+        if args.verify:
+            print("\nWaiting 3 seconds for Kafka to finish processing queue...")
+            await asyncio.sleep(3)
+            
+            if args.same_user:
+                bal_resp = await client.get(f"{FACADE_URL}/user/shared_user")
+                expected = total_requests * args.amount
+                print(f"User balance: {bal_resp.json().get('balance')} (Expected: {expected})")
+            else:
+                accounts_resp = await client.get(f"{FACADE_URL}/accounts")
+                accounts_data = accounts_resp.json()
+                print(f"Number of created accounts: {len(accounts_data)} (Expected: {args.clients})")
+                
+                sample_user = "user_0"
+                expected = args.requests_per_client * args.amount
+                print(f"Balance of {sample_user}: {accounts_data.get(sample_user)} (Expected: {expected})")
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,19 +1,41 @@
 import os
 import json
+import asyncio
 import grpc
 import hazelcast
+import httpx
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-HZ_CLUSTER = os.getenv("HZ_CLUSTER_NAME", "lab3-cluster")
-HZ_MEMBERS = os.getenv("HAZELCAST_MEMBERS", "hazelcast1:5701").split(",")
-GRPC_PORT = os.getenv("GRPC_PORT", "50051")
+CONFIG_SERVER_URL = os.getenv("CONFIG_SERVER_URL", "http://config-server:8500")
 SERVER_NAME = os.getenv("LOGGING_INSTANCE_ID", "logging-unknown")
+GRPC_PORT = os.getenv("GRPC_PORT", "50051")
+SELF_ADDRESS = os.getenv("SELF_ADDRESS", "localhost:50051")
 
 hz_client = None
 hz_map = None
 grpc_server = None
 
+async def fetch_config_value(key: str) -> str:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{CONFIG_SERVER_URL}/config/{key}")
+        response.raise_for_status()
+        return response.json()["value"]
+
+async def register_in_config_server():
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{CONFIG_SERVER_URL}/register",
+                json={
+                    "service_name": "logging-service",
+                    "instance_id": SERVER_NAME,
+                    "address": SELF_ADDRESS
+                }
+            )
+        print(f"{SERVER_NAME} Successfully registered in Config Server at {SELF_ADDRESS}", flush=True)
+    except Exception as e:
+        print(f"{SERVER_NAME} Failed to register in Config Server: {e}", flush=True)
 
 async def handle_save_log(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
     data = json.loads(request.decode("utf-8"))
@@ -36,24 +58,35 @@ async def handle_get_logs(request: bytes, context: grpc.aio.ServicerContext) -> 
     print(f"{SERVER_NAME} Received request to fetch all logs", flush=True)
     return json.dumps(parsed_logs).encode("utf-8")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global hz_client, hz_map, grpc_server
-    print(f"{SERVER_NAME} Starting Hazelcast connection...", flush=True)
+    
+    await register_in_config_server()
+
+    try:
+        hz_cluster = await fetch_config_value("hazelcast.cluster_name")
+        hz_members_str = await fetch_config_value("hazelcast.members")
+        hz_map_name = await fetch_config_value("hazelcast.map_name")
+        hz_members = hz_members_str.split(",")
+    except Exception as e:
+        print(f"{SERVER_NAME} Failed to fetch config: {e}. Using defaults.", flush=True)
+        hz_cluster = "lab3-cluster"
+        hz_members = ["hazelcast1:5701"]
+        hz_map_name = "transactions-map"
+
+    print(f"{SERVER_NAME} Starting Hazelcast connection to {hz_cluster}", flush=True)
     try:
         hz_client = hazelcast.HazelcastClient(
-            cluster_name=HZ_CLUSTER,
-            cluster_members=HZ_MEMBERS
+            cluster_name=hz_cluster,
+            cluster_members=hz_members
         )
-        hz_map = hz_client.get_map("transactions-map").blocking()
-        print(f"{SERVER_NAME} Successfully connected to Hazelcast cluster {HZ_CLUSTER}", flush=True)
+        hz_map = hz_client.get_map(hz_map_name).blocking()
+        print(f"{SERVER_NAME} Successfully connected to Hazelcast cluster {hz_cluster}", flush=True)
     except Exception as e:
         print(f"{SERVER_NAME} Error connecting to Hazelcast: {e}", flush=True)
 
     grpc_server = grpc.aio.server()
-    
-    
     rpc_methods = {
         "SaveLog": grpc.unary_unary_rpc_method_handler(handle_save_log),
         "FetchLogs": grpc.unary_unary_rpc_method_handler(handle_get_logs),
@@ -69,6 +102,16 @@ async def lifespan(app: FastAPI):
     yield 
 
     print(f"{SERVER_NAME} Shutting down...", flush=True)
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{CONFIG_SERVER_URL}/unregister",
+                json={"service_name": "logging-service", "instance_id": SERVER_NAME}
+            )
+    except:
+        pass
+
     if grpc_server:
         await grpc_server.stop(2)
     if hz_client:

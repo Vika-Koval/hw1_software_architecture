@@ -1,41 +1,99 @@
 services:
+  config-server:
+    build: 
+      context: .
+      dockerfile: config_server/Dockerfile
+    container_name: hw1-config-server
+    ports:
+      - "8500:8500"
+    networks:
+      - lab-network
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: hw1-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT_HOST://0.0.0.0:9092,PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qg
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - lab-network
+
+  postgres-db:
+    image: postgres:15
+    container_name: hw1-postgres-db-1
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: counterdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - hw1_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d counterdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lab-network
+
   hazelcast1:
-    image: hazelcast/hazelcast:5.6.0
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hw1-hazelcast1-1
     environment:
       - HZ_CLUSTERNAME=lab3-cluster
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast1,hazelcast2,hazelcast3
     ports:
       - "5701:5701"
     networks:
       - lab-network
 
   hazelcast2:
-    image: hazelcast/hazelcast:5.6.0
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hw1-hazelcast2-1
     environment:
       - HZ_CLUSTERNAME=lab3-cluster
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast1,hazelcast2,hazelcast3
     ports:
       - "5702:5701"
     networks:
       - lab-network
 
   hazelcast3:
-    image: hazelcast/hazelcast:5.6.0
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hw1-hazelcast3-1
     environment:
       - HZ_CLUSTERNAME=lab3-cluster
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast1,hazelcast2,hazelcast3
     ports:
       - "5703:5701"
-    networks:
-      - lab-network
-
-  postgres-db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: lab_user
-      POSTGRES_PASSWORD: lab_password
-      POSTGRES_DB: counter_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - pg_data:/var/lib/postgresql/data 
     networks:
       - lab-network
 
@@ -47,16 +105,18 @@ services:
     environment:
       - LOGGING_INSTANCE_ID=[logging-service-1]
       - HTTP_PORT=8081
-      - GRPC_PORT=50051
-      - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
-      - HZ_CLUSTER_NAME=lab3-cluster
+      - SELF_ADDRESS=logging1:50051
+      - CONFIG_SERVER_URL=http://config-server:8500
     ports:
-      - "8081:8081"   
-      - "50051:50051" 
+      - "8081:8081"
+      - "50051:50051"
+    depends_on:
+      - config-server
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
     networks:
       - lab-network
-    depends_on:
-      - hazelcast1
 
   logging2:
     build: 
@@ -66,16 +126,18 @@ services:
     environment:
       - LOGGING_INSTANCE_ID=[logging-service-2]
       - HTTP_PORT=8082
-      - GRPC_PORT=50051
-      - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
-      - HZ_CLUSTER_NAME=lab3-cluster
+      - SELF_ADDRESS=logging2:50051
+      - CONFIG_SERVER_URL=http://config-server:8500
     ports:
       - "8082:8082"
       - "50052:50051"
+    depends_on:
+      - config-server
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
     networks:
       - lab-network
-    depends_on:
-      - hazelcast2
 
   logging3:
     build: 
@@ -85,52 +147,64 @@ services:
     environment:
       - LOGGING_INSTANCE_ID=[logging-service-3]
       - HTTP_PORT=8083
-      - GRPC_PORT=50051
-      - HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
-      - HZ_CLUSTER_NAME=lab3-cluster
+      - SELF_ADDRESS=logging3:50051
+      - CONFIG_SERVER_URL=http://config-server:8500
     ports:
       - "8083:8083"
       - "50053:50051"
+    depends_on:
+      - config-server
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
     networks:
       - lab-network
-    depends_on:
-      - hazelcast3
 
   counter-service:
     build: 
       context: .
       dockerfile: counter_service/Dockerfile
     environment:
-      - PORT=8084
-      - DB_URL=postgresql://lab_user:lab_password@postgres-db:5432/counter_db
+      - DATABASE_URL=postgresql://user:password@postgres-db:5432/counterdb
+      - HTTP_PORT=8001
+      - SELF_ADDRESS=http://counter-service:8001
+      - CONFIG_SERVER_URL=http://config-server:8500
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     ports:
-      - "8084:8084"
+      - "8001:8001"
+    depends_on:
+      config-server:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
     networks:
       - lab-network
-    depends_on:
-      - postgres-db
 
   facade-service:
     build: 
       context: .
       dockerfile: facade_service/Dockerfile
     environment:
-      - PORT=8080
-      - LOGGING_GRPC_TARGETS=logging1:50051,logging2:50051,logging3:50051
-      - COUNTER_SERVICE_URL=http://counter-service:8084
+      - HTTP_PORT=8080
+      - CONFIG_SERVER_URL=http://config-server:8500
+      - LOGGING_SERVICE_NAME=logging-service
+      - COUNTER_SERVICE_NAME=counter-service
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     ports:
       - "8080:8080"
+    depends_on:
+      config-server:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     networks:
       - lab-network
-    depends_on:
-      - logging1
-      - logging2
-      - logging3
-      - counter-service
 
 networks:
   lab-network:
     driver: bridge
 
 volumes:
-  pg_data:
+  hw1_pg_data:

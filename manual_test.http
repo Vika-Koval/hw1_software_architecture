@@ -1,3 +1,9 @@
+### 
+GET http://localhost:8500/services
+
+### 
+GET http://localhost:8500/config
+
 ### msg1
 POST http://localhost:8080/transaction
 Content-Type: application/json
@@ -99,3 +105,25 @@ GET http://localhost:8080/accounts
 
 ### 
 GET http://localhost:8080/metrics
+
+
+### msg11 (
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "msg1",
+    "amount": 50.00
+}
+
+### msg12
+POST http://localhost:8080/transaction
+Content-Type: application/json
+
+{
+    "user_Id": "msg2",
+    "amount": 100.00
+}
+
+### 
+GET http://localhost:8080/user/msg1
