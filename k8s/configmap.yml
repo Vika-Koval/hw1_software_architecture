@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microservices-config
+  namespace: micro-lab
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  KAFKA_BALANCE_UPDATES_TOPIC: "balance-updates"
+  KAFKA_BALANCE_UPDATES_GROUP: "counter-service-group"
+
+  HAZELCAST_CLUSTER_NAME: "micro-cluster"
+  HAZELCAST_MEMBERS: "hazelcast-service:5701"
+  HAZELCAST_MAP_NAME: "transactions-map"

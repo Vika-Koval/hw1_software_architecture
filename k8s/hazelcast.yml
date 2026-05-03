@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hazelcast-discovery-sa
+  namespace: micro-lab
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hazelcast-discovery-role
+  namespace: micro-lab
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints", "pods", "nodes", "services"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hazelcast-discovery-binding
+  namespace: micro-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hazelcast-discovery-role
+subjects:
+  - kind: ServiceAccount
+    name: hazelcast-discovery-sa
+    namespace: micro-lab
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hazelcast-service
+  namespace: micro-lab
+spec:
+  clusterIP: None
+  selector:
+    app: hazelcast
+  ports:
+    - name: hazelcast-port
+      protocol: TCP
+      port: 5701
+      targetPort: 5701
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hazelcast
+  namespace: micro-lab
+spec:
+  serviceName: "hazelcast-service"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hazelcast
+  template:
+    metadata:
+      labels:
+        app: hazelcast
+    spec:
+      serviceAccountName: hazelcast-discovery-sa  
+      containers:
+        - name: hazelcast
+          image: hazelcast/hazelcast:5.3.6
+          ports:
+            - containerPort: 5701
+              name: hazelcast-port
+          env:
+            - name: HZ_CLUSTERNAME
+              value: "micro-cluster"
+            - name: HZ_NETWORK_JOIN_MULTICAST_ENABLED
+              value: "false"
+            - name: HZ_NETWORK_JOIN_TCPIP_ENABLED
+              value: "false"
+            - name: HZ_NETWORK_JOIN_KUBERNETES_ENABLED
+              value: "true"
+            - name: HZ_NETWORK_JOIN_KUBERNETES_SERVICENAME
+              value: "hazelcast-service"
+            - name: HZ_NETWORK_JOIN_KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          readinessProbe:
+            tcpSocket:
+              port: hazelcast-port
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: hazelcast-port
+            initialDelaySeconds: 20
+            periodSeconds: 15

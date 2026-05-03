@@ -2,68 +2,68 @@ import os
 import json
 import asyncio
 import asyncpg
-import httpx
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from aiokafka import AIOKafkaConsumer
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://user:password@postgres-db:5432/counterdb")
-CONFIG_SERVER_URL = os.getenv("CONFIG_SERVER_URL", "http://config-server:8500")
-INSTANCE_ID = os.getenv("INSTANCE_ID", "counter-service-1")
-SELF_ADDRESS = os.getenv("SELF_ADDRESS", "http://counter-service:8001")
+DB_URL = os.getenv("DATABASE_URL")
+KAFKA_BROKER = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+KAFKA_TOPIC = os.getenv("KAFKA_BALANCE_UPDATES_TOPIC")
+KAFKA_GROUP = os.getenv("KAFKA_BALANCE_UPDATES_GROUP", "counter-group")
 
 db_pool = None
 kafka_task = None
 
-async def fetch_config_value(key: str) -> str:
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{CONFIG_SERVER_URL}/config/{key}")
-        response.raise_for_status()
-        return response.json()["value"]
-
-async def consume_balance_updates():
-    bootstrap_servers = await fetch_config_value("kafka.bootstrap.servers")
-    topic_name = await fetch_config_value("kafka.balance_updates.topic")
-    group_id = await fetch_config_value("kafka.balance_updates.group_id")
-
+async def consume_kafka():
     consumer = AIOKafkaConsumer(
-        topic_name,
-        bootstrap_servers=bootstrap_servers,
-        group_id=group_id,
-        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-        auto_offset_reset="earliest"
+        KAFKA_TOPIC,
+        bootstrap_servers=KAFKA_BROKER,
+        group_id=KAFKA_GROUP,
+        enable_auto_commit=False, 
+        auto_offset_reset="earliest",
+        value_deserializer=lambda m: json.loads(m.decode('utf-8'))
     )
 
-    connected = False
-    while not connected:
+    for attempt in range(1, 31):
         try:
             await consumer.start()
-            connected = True
-            print("Successfully connected to Kafka Broker!", flush=True)
+            print(f"Successfully connected to Kafka on attempt {attempt}!", flush=True)
+            break
         except Exception as e:
-            print(f"Waiting for Kafka to be ready. Error: {e}", flush=True)
-            await asyncio.sleep(3)
+            print(f"Attempt {attempt}: Waiting for Kafka. {e}", flush=True)
+            await asyncio.sleep(2)
+    else:
+        print("Failed to connect to Kafka after 30 attempts.", flush=True)
+        return
 
     try:
         async for msg in consumer:
             payload = msg.value
-            user_id = payload.get("user_Id")
+            u_id = payload.get("user_id") or payload.get("user_Id")
             amount = payload.get("amount")
 
-            if not user_id or amount is None:
+            if not u_id or amount is None:
+                await consumer.commit() 
                 continue
 
-            print(f"Consumed message from Kafka: user={user_id}, amount={amount}", flush=True)
-
-            query = '''
-                INSERT INTO accounts (user_id, balance)
-                VALUES ($1, $2)
-                ON CONFLICT (user_id)
-                DO UPDATE SET balance = accounts.balance + EXCLUDED.balance;
-            '''
-            async with db_pool.acquire() as conn:
-                await conn.execute(query, user_id, float(amount))
+            try:
+                query = '''
+                    INSERT INTO accounts (user_id, balance)
+                    VALUES ($1, $2)
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET balance = accounts.balance + EXCLUDED.balance
+                    RETURNING balance;
+                '''
+                async with db_pool.acquire() as conn:
+                    new_balance = await conn.fetchval(query, u_id, float(amount))
+                    print(f"Processed tx. User: {u_id}, New Balance: {new_balance}", flush=True)
                 
+                await consumer.commit()
+
+            except Exception as e:
+                print(f"DB Error processing message: {e}. Retrying later.", flush=True)
+                await asyncio.sleep(1.0) 
+
     finally:
         await consumer.stop()
 
@@ -71,68 +71,49 @@ async def consume_balance_updates():
 async def lifespan(app: FastAPI):
     global db_pool, kafka_task
     
-    try:
-        db_pool = await asyncpg.create_pool(dsn=DB_URL, min_size=5, max_size=20)
-        async with db_pool.acquire() as conn:
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS accounts (
-                    user_id TEXT PRIMARY KEY,
-                    balance DOUBLE PRECISION NOT NULL DEFAULT 0.0
-                )
-            ''')
-        print("Data base initialized", flush=True)
-    except Exception as e:
-        print(f"Error initializing database: {e}", flush=True)
-        raise e
-
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{CONFIG_SERVER_URL}/register",
-                json={
-                    "service_name": "counter-service",
-                    "instance_id": INSTANCE_ID,
-                    "address": SELF_ADDRESS
-                }
+    db_pool = await asyncpg.create_pool(dsn=DB_URL, min_size=1, max_size=10)
+    async with db_pool.acquire() as conn:
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                user_id TEXT PRIMARY KEY,
+                balance DOUBLE PRECISION NOT NULL DEFAULT 0.0
             )
-        print("Successfully registered in Config Server", flush=True)
-    except Exception as e:
-        print(f"Failed to register in Config Server: {e}", flush=True)
-
-    kafka_task = asyncio.create_task(consume_balance_updates())
-
-    yield 
-
-    if kafka_task is not None:
+        ''')
+    print("Database pool initialized", flush=True)
+    
+    kafka_task = asyncio.create_task(consume_kafka())
+    yield
+    
+    print("Shutting down counter-service...", flush=True)
+    if kafka_task:
         kafka_task.cancel()
-    if db_pool is not None:
+        try:
+            await kafka_task
+        except asyncio.CancelledError:
+            pass
+    if db_pool:
         await db_pool.close()
 
 app = FastAPI(lifespan=lifespan)
 
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "counter-service"}
 
 @app.get("/user/{user_Id}")
-async def get_user_balance(user_Id: str):
-    if db_pool is None:
-        raise HTTPException(status_code=503, detail="Database pool is not initialized")
-
-    query = 'SELECT balance FROM accounts WHERE user_id = $1;'
-    
+async def get_balance(user_Id: str):
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database not ready")
+        
     async with db_pool.acquire() as conn:
-        balance = await conn.fetchval(query, user_Id)
-
-    return {"balance": balance if balance is not None else 0.0}
+        val = await conn.fetchval("SELECT balance FROM accounts WHERE user_id = $1", user_Id)
+    return {"balance": val if val is not None else 0.0}
 
 @app.get("/accounts")
-async def get_all_accounts():
-    if db_pool is None:
-        raise HTTPException(status_code=503, detail="Database pool is not initialized")
-
-    query = 'SELECT user_id, balance FROM accounts;'
-    
+async def get_accounts():
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database not ready")
+        
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch(query)
-        
-    accounts_snapshot = {row['user_id']: row['balance'] for row in rows}
-        
-    return accounts_snapshot
+        rows = await conn.fetch("SELECT user_id, balance FROM accounts")
+    return {r['user_id']: r['balance'] for r in rows}

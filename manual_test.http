@@ -1,8 +1,5 @@
-### 
-GET http://localhost:8500/services
-
-### 
-GET http://localhost:8500/config
+### health check
+GET http://localhost:8080/health
 
 ### msg1
 POST http://localhost:8080/transaction
@@ -49,65 +46,19 @@ Content-Type: application/json
     "amount": 5.00
 }
 
-### msg6
-POST http://localhost:8080/transaction
-Content-Type: application/json
-
-{
-    "user_Id": "msg6",
-    "amount": 6.00
-}
-
-### msg7
-POST http://localhost:8080/transaction
-Content-Type: application/json
-
-{
-    "user_Id": "msg7",
-    "amount": 7.00
-}
-
-### msg8
-POST http://localhost:8080/transaction
-Content-Type: application/json
-
-{
-    "user_Id": "msg8",
-    "amount": 8.00
-}
-
-### msg9
-POST http://localhost:8080/transaction
-Content-Type: application/json
-
-{
-    "user_Id": "msg9",
-    "amount": 9.00
-}
-
-### msg10
-POST http://localhost:8080/transaction
-Content-Type: application/json
-
-{
-    "user_Id": "msg10",
-    "amount": 10.00
-}
-
-### 
+### get details and transactions for first user
 GET http://localhost:8080/user/msg1
 
-### 
-GET http://localhost:8080/user/msg10
-
-### 
+### get balances of all accounts
 GET http://localhost:8080/accounts
 
-### 
+### view performance metrics 
 GET http://localhost:8080/metrics
 
+### reset performance metrics 
+POST http://localhost:8080/metrics/reset
 
-### msg11 (
+### large transaction to check balance updates
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
@@ -116,7 +67,7 @@ Content-Type: application/json
     "amount": 50.00
 }
 
-### msg12
+### another large transaction
 POST http://localhost:8080/transaction
 Content-Type: application/json
 
@@ -124,9 +75,3 @@ Content-Type: application/json
     "user_Id": "msg2",
     "amount": 100.00
 }
-
-### 
-GET http://localhost:8080/user/msg1
-
-### 
-GET http://localhost:8080/user/msg2
